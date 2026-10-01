@@ -1,0 +1,14 @@
+# 含 Wi-Fi 密碼與 OpenAI API Key，絕對不要上傳
+SparkBot_OpenAI/config.h
+
+# 編譯產物
+build/
+
+# 原廠韌體備份、產品文件、暫存檔
+backup/
+*.bin
+*.docx
+*.pdf
+*.mp4
+~$*
+~WRL*.tmp
