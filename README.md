@@ -1,5 +1,7 @@
 # esp32s3-sparkbot-ai-chatbot
 ESP32 AI桌上型機器人-SparkBot
+<img width="1151" height="900" alt="image" src="https://github.com/user-attachments/assets/538f7452-3a2c-498c-b252-81316f4861f8" />
+<img width="1196" height="943" alt="image" src="https://github.com/user-attachments/assets/552f54bd-949b-4539-ad72-6d1cede5f67a" />
 <img width="1220" height="825" alt="image" src="https://github.com/user-attachments/assets/bf6ab6bc-ec0d-4f53-b88c-dc5fddd36221" />
 <img width="897" height="661" alt="image" src="https://github.com/user-attachments/assets/19794953-543d-4a03-a10d-aec998eb4641" />
 
