@@ -58,10 +58,11 @@ ESP32 AI桌上型機器人-SparkBot
 | `REC_SECONDS` / `REC_FPS` | 錄影最長秒數、每秒張數 |
 
 - 歌曲與 MV 資料夾要設成「**知道連結的任何人都能檢視**」。
-- **MV 轉檔**：用 `tools/make_xkv.py` 把 MP4 轉成 `.xkv`（MJPEG 影像 + MP3 聲音，需安裝 ffmpeg）：
+- **MV 轉檔**：用 `tools/make_xkv.py` 把 MP4 轉成 `.xkv`（MJPEG 影像 + MP3 聲音，需安裝 ffmpeg）。SparkBot 請轉 **240×136、每秒 15 張**（S3 軟體解碼，小畫面才流暢）：
   ```bash
-  python tools/make_xkv.py 輸入.mp4 輸出.xkv
+  python tools/make_xkv.py 輸入.mp4 輸出.xkv 240 136 15
   ```
+  不加尺寸時為 P4 七吋版的 640×352、每秒 12 張。兩種 MV 請放在不同的雲端資料夾（SparkBot 用 `songs_mv_240`，P4 用 `songs_mv`）。
 - **上傳腳本**：在 https://script.google.com 新增專案，貼上 `tools/GoogleDrive_Upload.example.gs`，填入照片資料夾 ID、影片資料夾 ID 與自訂 TOKEN，先執行一次 `testAccess` 完成授權，再「部署 → 網頁應用程式」（執行身分：我；存取權：所有人），把網址填到 `GDRIVE_SCRIPT_URL`、TOKEN 填到 `GDRIVE_TOKEN`。
 
 ### 5. 編譯與上傳
@@ -134,7 +135,7 @@ esptool --chip esp32s3 --port COM8 --after watchdog-reset write-flash 0x0 build/
 
 11. **歌曲版權**：歌單歌曲為吳玉柱詞曲創作，版權所有。
 12. **隨機播放**：唱歌與 MV 用硬體亂數隨機選，最近播過的 5 首（記在 NVS，重開機也記得）不會馬上重複。
-13. **MV 畫面較慢**：ESP32-S3 沒有硬體 JPEG 解碼，MV 畫面用軟體解碼（`MV_FAST 1` 時縮到 160 寬再放大，每張約 160ms），約每秒 5 張；聲音完整，畫面以聲音為準同步，跟不上時自動跳格。想更流暢可以另外用 `make_xkv.py` 轉 240 寬的 MV 給 SparkBot 用。
+13. **MV 流暢度**：ESP32-S3 沒有硬體 JPEG 解碼，MV 用軟體解碼。請用 240×136 的 MV（上面的轉檔方式），畫面 1:1 顯示、播放流暢；若放 640 寬的 MV 也能播，但會自動縮小解碼，每秒只有約 5 張。聲音完整，畫面以聲音為準同步，跟不上時自動跳格。
 14. **錄影長度**：S3 只有 8MB PSRAM，錄影時會暫時借用語音緩衝，最長約 60 秒（`REC_SECONDS`），記憶體滿會自動結束並上傳。上傳時間依網路速度，15 秒影片約 10 秒。
 15. **同一時間只開一條 HTTPS 連線**：照片在背景上傳時，AI 回答會稍等上傳完成（同時開兩條加密連線會記憶體不足而失敗）。
 16. **短指令**：「拍照」這類兩個字的指令約 0.3 秒，`VAD_MIN_SPEECH_MS` 預設 250ms；常被雜音誤觸時可調高。

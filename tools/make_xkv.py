@@ -1,5 +1,7 @@
 # MP4 → 小柯 MV 檔（.xkv）：MJPEG 影像 + MP3 聲音交錯，ESP32-P4 邊下載邊播
-# 用法：python make_xkv.py 輸入.mp4 輸出.xkv
+# 用法：python make_xkv.py 輸入.mp4 輸出.xkv [寬 高 每秒張數]
+#   P4 七吋版（預設）：640 352 12
+#   SparkBot（ESP32-S3 軟體解碼）：240 136 15  → 每張解碼快很多，播放流暢
 #
 # 檔案格式（little-endian）：
 #   檔頭 32 bytes："XKV1" u16 寬 u16 高 u16 fps u16 保留 u32 影格數 u32 長度(ms) u32 取樣率 填 0 到 32 bytes
@@ -9,6 +11,9 @@ import os, sys, struct, subprocess, tempfile
 
 W, H, FPS, SR = 640, 352, 12, 24000
 src, dst = sys.argv[1], sys.argv[2]
+if len(sys.argv) >= 5: W, H = int(sys.argv[3]), int(sys.argv[4])
+if len(sys.argv) >= 6: FPS = int(sys.argv[5])
+Q = '6' if W >= 480 else '4'                     # 小畫面用高一點的畫質（檔案仍很小）
 tmp = tempfile.mkdtemp()
 mp3 = os.path.join(tmp, 'a.mp3')
 mjpeg = os.path.join(tmp, 'v.mjpeg')
@@ -17,7 +22,7 @@ subprocess.run(['ffmpeg', '-v', 'error', '-y', '-i', src, '-vn', '-map', '0:a:0'
                 '-ac', '1', '-ar', str(SR), '-c:a', 'libmp3lame', '-b:a', '80k', '-id3v2_version', '0', '-write_xing', '0', mp3], check=True)
 subprocess.run(['ffmpeg', '-v', 'error', '-y', '-i', src, '-map', '0:v:0', '-an',
                 '-vf', f'fps={FPS},scale={W}:{H}:force_original_aspect_ratio=decrease,pad={W}:{H}:(ow-iw)/2:(oh-ih)/2:black',
-                '-c:v', 'mjpeg', '-pix_fmt', 'yuvj420p', '-q:v', '6', '-f', 'mjpeg', mjpeg], check=True)
+                '-c:v', 'mjpeg', '-pix_fmt', 'yuvj420p', '-q:v', Q, '-f', 'mjpeg', mjpeg], check=True)
 
 # ---- 切 MP3 影格（MPEG-2 Layer III，24kHz：每格 576 樣本 = 24ms）----
 a = open(mp3, 'rb').read()

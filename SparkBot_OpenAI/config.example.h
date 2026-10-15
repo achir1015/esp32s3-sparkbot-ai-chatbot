@@ -43,7 +43,7 @@
 // ------------------------------------------------- 雲端唱歌、播 MV（Google 雲端硬碟）----
 // 資料夾要設成「知道連結的任何人都能檢視」
 #define SONGS_MP3_FOLDER  "https://drive.google.com/drive/folders/1tKvT2Rg8uhTWrXZqL7NlEcpzeBYoNzPW"   // songs_mp3
-#define SONGS_MV_FOLDER   "https://drive.google.com/drive/folders/16xabmnPUX0rsQBSAtCW6bMUmvY3XlIle"   // songs_mv（.xkv）
+#define SONGS_MV_FOLDER   "https://drive.google.com/drive/folders/1GeVUF229DdVgCbvrcXP_NUx0OGOf2Bq5"   // songs_mv_240（SparkBot 專用 240x136 .xkv；P4 用原本的 songs_mv）
 #define MV_FAST           1          // 1 = MV 解碼縮小一點再放大（畫面較流暢、稍模糊）；0 = 清楚但較卡
 
 // ------------------------------------------------- 拍照、錄影上傳（Google Apps Script）----
