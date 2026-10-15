@@ -269,13 +269,12 @@ int histCount = 0;
 const char *OPENAI_HOST = "https://api.openai.com";
 
 // ---- 可由網頁修改的設定（存在 NVS；沒存過就用 config.h 的值）----
-struct Settings { String ssid, pass, apiKey, playlist; } cfg;
+struct Settings { String ssid, pass, apiKey, playlist, devName; } cfg;   // devName：SparkBot1、SparkBot2…（網路名稱、熱點名稱）
 Preferences prefs;
 WebServer server(80);
 DNSServer dnsServer;
 volatile bool portalMode = false;
 char ipText[24] = "";
-#define AP_SSID "SparkBot-Setup"
 #define AP_PASS "sparkbot123"
 
 String cleanDefault(const char *v, const char *placeholder) {
@@ -287,8 +286,12 @@ void loadSettings() {
   cfg.pass   = prefs.isKey("pass")   ? prefs.getString("pass")   : cleanDefault(WIFI_PASSWORD, "你的WiFi");
   cfg.apiKey = prefs.isKey("apikey") ? prefs.getString("apikey") : cleanDefault(OPENAI_API_KEY, "請填入");
   cfg.playlist = prefs.isKey("playlist") ? prefs.getString("playlist") : String(YT_PLAYLIST_URL);
+  cfg.devName = prefs.getString("devname", DEVICE_NAME);
   prefs.end();
 }
+String apSsid() { return cfg.devName + "-Setup"; }        // 設定模式的熱點名稱
+String mdnsName() { String n = cfg.devName; n.toLowerCase(); return n; }   // http://sparkbot1.local
+
 String authHeader() { return "Bearer " + cfg.apiKey; }
 
 // ============================================================================
@@ -512,7 +515,7 @@ void buildHelp() {
     {"4. 表情：會依心情開心、愛心、驚訝、難過、生氣、眨眼、害羞；太久沒互動會想睡覺。", C_WHITE},
     {"5. 時間：上方顯示日期、星期、農曆與時間，也可以問「今天農曆幾號」。", C_WHITE},
     {"6. 網頁設定：開啟螢幕左下角的網址，可修改 Wi-Fi、密碼與 API Key。", C_WHITE},
-    {"7. 連不上 Wi-Fi 時會開熱點 " AP_SSID "（密碼 " AP_PASS "），手機連上後開 192.168.4.1 設定。", C_WHITE},
+    {"7. 連不上 Wi-Fi 時會開熱點「裝置名稱-Setup」（例如 SparkBot1-Setup，密碼 " AP_PASS "），手機連上後開 192.168.4.1 設定。", C_WHITE},
     {"8. 上網查詢：問天氣、新聞、股價、比賽結果等即時資訊，" ROBOT_NAME "會先上網搜尋再回答。", C_WHITE},
     {"9. 唱歌：說「唱首歌」或點歌「唱千江有水千江月」，直接播放" SONG_COMPOSER "的雲端創作歌曲；按鍵停止。", C_WHITE},
     {"9-1. 播 MV：說「播 MV」或「播千江水萬重山的 MV」，邊下載邊播；按鍵停止。", C_WHITE},
@@ -834,6 +837,8 @@ void uiTask(void *) {
       u8f.drawUTF8(4, 218, hint);
       u8f.setForegroundColor(C_GLOW_DIM);
       u8f.drawUTF8(4, 236, ipText);                                  // 設定網頁位址
+      u8f.setForegroundColor(C_GRAY);
+      u8f.drawUTF8(SCREEN_W - 4 - u8f.getUTF8Width(cfg.devName.c_str()), 218, cfg.devName.c_str());   // 裝置名稱
       drawMicBars(SCREEN_W - 30, 236, st == UI_LISTEN);
     } else {
       // 240x240：左上小機器人 + 右側標題，下方整行文字
@@ -1713,6 +1718,7 @@ String maskKey(const String &k) {
 void handleStatus() {
   JsonDocument d;
   d["name"] = ROBOT_NAME;
+  d["dev"] = cfg.devName;
   d["mode"] = portalMode ? "ap" : "sta";
   d["ssid"] = cfg.ssid;
   d["hasPass"] = cfg.pass.length() > 0;
@@ -1757,6 +1763,10 @@ void handleScan() {
 
 void handleSave() {
   String ssid = server.arg("ssid"), pass = server.arg("pass"), key = server.arg("apikey"), pl = server.arg("playlist");
+  String dev;                                          // 裝置名稱：只留英數字與 -，最多 24 字
+  String rawDev = server.arg("devname");
+  for (size_t i = 0; i < rawDev.length() && dev.length() < 24; i++)
+    if (isalnum((uint8_t)rawDev[i]) || rawDev[i] == '-') dev += rawDev[i];
   ssid.trim(); key.trim(); pl.trim();
   if (ssid.isEmpty()) { server.send(400, "text/plain; charset=utf-8", "請選擇 Wi-Fi"); return; }
   prefs.begin("robot", false);
@@ -1765,6 +1775,7 @@ void handleSave() {
   prefs.putString("ssid", ssid);
   prefs.putString("apikey", key.length() ? key : cfg.apiKey);
   if (pl != cfg.playlist) { prefs.putString("playlist", pl); prefs.remove("songs"); }
+  if (dev.length()) prefs.putString("devname", dev);
   prefs.end();
   server.send(200, "text/plain; charset=utf-8", "ok");
   Serial.println("設定已儲存，重新啟動");
@@ -1806,13 +1817,13 @@ void runSetupPortal(const String &reason) {
   portalMode = true;
   WiFi.disconnect();
   WiFi.mode(WIFI_AP_STA);
-  WiFi.softAP(AP_SSID, AP_PASS);
+  WiFi.softAP(apSsid().c_str(), AP_PASS);
   delay(200);
   dnsServer.start(53, "*", WiFi.softAPIP());
   snprintf(ipText, sizeof(ipText), "http://%s", WiFi.softAPIP().toString().c_str());
   startWebServer();
-  Serial.printf("設定模式：%s，熱點 %s / %s，http://%s\n", reason.c_str(), AP_SSID, AP_PASS, WiFi.softAPIP().toString().c_str());
-  setUi(UI_MSG, "設定模式", reason + "\n1. 手機連 Wi-Fi「" AP_SSID "」\n   密碼 " AP_PASS "\n2. 開啟 http://192.168.4.1\n3. 選 Wi-Fi、填密碼與 API Key");
+  Serial.printf("設定模式：%s，熱點 %s / %s，http://%s\n", reason.c_str(), apSsid().c_str(), AP_PASS, WiFi.softAPIP().toString().c_str());
+  setUi(UI_MSG, "設定模式", reason + "\n1. 手機連 Wi-Fi「" + apSsid() + "」\n   密碼 " AP_PASS "\n2. 開啟 http://192.168.4.1\n3. 選 Wi-Fi、填密碼與 API Key");
   while (true) delay(1000);
 }
 
@@ -1821,6 +1832,7 @@ void connectWiFi(bool allowPortal) {
   if (cfg.ssid.isEmpty()) runSetupPortal("尚未設定 Wi-Fi");
   setUi(UI_MSG, "連線 Wi-Fi 中…", cfg.ssid);
   WiFi.mode(WIFI_STA);
+  WiFi.setHostname(mdnsName().c_str());                 // 路由器裝置清單顯示的名稱
   WiFi.setSleep(false);
   WiFi.begin(cfg.ssid.c_str(), cfg.pass.c_str());
   uint32_t t0 = millis();
@@ -1834,8 +1846,9 @@ void connectWiFi(bool allowPortal) {
     }
   }
   snprintf(ipText, sizeof(ipText), "http://%s", WiFi.localIP().toString().c_str());
-  Serial.printf("WiFi IP: %s（設定網頁 %s 或 http://sparkbot.local）\n", WiFi.localIP().toString().c_str(), ipText);
-  MDNS.begin("sparkbot");
+  Serial.printf("%s WiFi IP: %s（設定網頁 %s 或 http://%s.local）\n", cfg.devName.c_str(), WiFi.localIP().toString().c_str(), ipText,
+                mdnsName().c_str());
+  MDNS.begin(mdnsName().c_str());
   MDNS.addService("http", "tcp", 80);
   startWebServer();
   configTzTime("CST-8", "time.stdtime.gov.tw", "pool.ntp.org");

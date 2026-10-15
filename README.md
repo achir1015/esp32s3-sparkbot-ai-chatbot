@@ -42,7 +42,9 @@ ESP32 AI桌上型機器人-SparkBot
 1. 把 `SparkBot_OpenAI/config.example.h` 複製成 `SparkBot_OpenAI/config.h`
 2. 填入 Wi-Fi 名稱、密碼（**只支援 2.4GHz**）與 OpenAI API Key（https://platform.openai.com/api-keys）
 
-也可以先不填：開機連不上 Wi-Fi 時，機器人會開熱點 `SparkBot-Setup`（密碼 `sparkbot123`），用手機連上後開 `http://192.168.4.1`，選擇 Wi-Fi 並輸入 API Key。
+也可以先不填：開機連不上 Wi-Fi 時，機器人會開熱點 `裝置名稱-Setup`（例如 `SparkBot1-Setup`）（密碼 `sparkbot123`），用手機連上後開 `http://192.168.4.1`，選擇 Wi-Fi 並輸入 API Key。
+
+**多台機器人**：每台可在設定網頁填「裝置名稱」（例如 `SparkBot1`、`SparkBot2`），網址會變成 `http://sparkbot1.local`、熱點變成 `SparkBot1-Setup`，螢幕右下角也會顯示名稱，同時開機不會衝突。預設名稱在 `config.h` 的 `DEVICE_NAME`。
 
 ### 4. 雲端歌曲、MV 與照片／影片上傳（選用）
 
@@ -108,7 +110,7 @@ esptool --chip esp32s3 --port COM8 --after watchdog-reset write-flash 0x0 build/
 | 對話記憶 | 記得最近 10 則對話；「清除記憶」「重新開始」可清除 |
 | 表情 | 依 AI 回答的心情顯示開心、愛心、驚訝、難過、生氣、眨眼、害羞；聆聽、思考、說話各有動畫；太久沒互動會想睡覺 |
 | 時鐘與農曆 | 上方顯示日期、星期、農曆與時間，也可以問「今天農曆幾號」|
-| 設定網頁 | 瀏覽器開螢幕左下角的網址或 `http://sparkbot.local`，可修改 Wi-Fi、API Key、YouTube 歌單網址 |
+| 設定網頁 | 瀏覽器開螢幕左下角的網址或 `http://裝置名稱.local`（例如 `http://sparkbot1.local`），可修改裝置名稱、Wi-Fi、API Key、YouTube 歌單網址 |
 | BOOT 鍵 | 短按：功能說明（翻頁，最後一頁回到聊天）；按住：說話，放開送出（環境吵雜時用）；唱歌、MV、錄影時按：停止；攝影畫面時按：回到原畫面 |
 
 ---

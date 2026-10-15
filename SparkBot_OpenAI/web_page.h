@@ -38,6 +38,9 @@ button:disabled{opacity:.6}
 <div class="card status" id="status"><span>狀態</span><span>讀取中…</span></div>
 
 <form id="f" class="card" autocomplete="off">
+  <label for="devname">裝置名稱（英數字，例如 SparkBot1；網址會變成 http://sparkbot1.local）</label>
+  <input id="devname" placeholder="SparkBot1" maxlength="24">
+
   <label for="ssidSel">Wi-Fi 名稱（只支援 2.4GHz）</label>
   <div class="row">
     <select id="ssidSel"><option value="">掃描中…</option></select>
@@ -71,7 +74,8 @@ function bars(r){return r>-55?'▂▄▆█':r>-67?'▂▄▆':r>-78?'▂▄':'�
 async function loadStatus(){
   try{
     cur=await (await fetch('/status')).json();
-    $('title').textContent=cur.name+'設定';
+    $('title').textContent=(cur.dev||cur.name)+' 設定';document.title=$('title').textContent;
+    $('devname').value=cur.dev||'';
     const rows=[['模式',cur.mode==='ap'?'設定模式（尚未連上 Wi-Fi）':'已連線'],['Wi-Fi',cur.ssid||'（未設定）'],
       ['IP',cur.ip],['訊號',cur.rssi?cur.rssi+' dBm':'—']];
     $('status').innerHTML=rows.map(r=>`<span>${r[0]}</span><span>${r[1]}</span>`).join('');
@@ -107,7 +111,7 @@ $('f').onsubmit=async e=>{
   if(key&&!key.startsWith('sk-')){msg.className='err';msg.textContent='API Key 應該以 sk- 開頭';return}
   $('saveBtn').disabled=true;msg.className='';msg.textContent='儲存中…';
   try{
-    const body=new URLSearchParams({ssid,pass:$('pass').value,apikey:key,playlist:$('playlist').value.trim()});
+    const body=new URLSearchParams({ssid,pass:$('pass').value,apikey:key,playlist:$('playlist').value.trim(),devname:$('devname').value.trim()});
     const r=await fetch('/save',{method:'POST',body});
     const t=await r.text();
     if(!r.ok)throw new Error(t);

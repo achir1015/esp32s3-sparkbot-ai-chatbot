@@ -19,6 +19,7 @@
 #define TTS_INSTRUCTIONS "用可愛、活潑、溫暖的台灣口音中文說話，語氣像貼心的小朋友，語速稍快。"
 
 #define ROBOT_NAME      "小柯"
+#define DEVICE_NAME     "SparkBot"  // 裝置名稱預設值（網路名稱、熱點名稱），每台可在設定網頁改成 SparkBot1、SparkBot2…
 #define MAX_HISTORY_MSGS 10        // 記住最近幾則對話（user+assistant 各算 1 則）
 #define CHAT_MAX_TOKENS  300
 
