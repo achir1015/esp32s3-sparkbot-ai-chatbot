@@ -16,7 +16,7 @@ ESP32 AI桌上型機器人-SparkBot
 | 主控 | ESP-SparkBot 頭部：ESP32-S3-WROOM-1 N16R8（16MB Flash、8MB OPI PSRAM）|
 | 螢幕 | 1.54" ST7789 240×240 |
 | 音訊 | ES8311（喇叭 + 麥克風同一顆晶片）+ 功放 |
-| 鏡頭 | OV2640 |
+| 鏡頭 | OV2640 或 OV3660（兩種都實測可用）|
 | 底座（選配）| 履帶底座，底部 4P 磁吸介面（5V / GPIO48 / GPIO38 / GND），需刷官方 `c2_tracked_chassis` 韌體 |
 
 腳位已寫在 `config.example.h`，是板子固定的接線，不需要修改：
@@ -44,7 +44,25 @@ ESP32 AI桌上型機器人-SparkBot
 
 也可以先不填：開機連不上 Wi-Fi 時，機器人會開熱點 `SparkBot-Setup`（密碼 `sparkbot123`），用手機連上後開 `http://192.168.4.1`，選擇 Wi-Fi 並輸入 API Key。
 
-### 4. 編譯與上傳
+### 4. 雲端歌曲、MV 與照片／影片上傳（選用）
+
+`config.h` 另外可設定：
+
+| 設定 | 說明 |
+|---|---|
+| `SONGS_MP3_FOLDER` | Google 雲端硬碟 MP3 資料夾網址（`songs_mp3`）|
+| `SONGS_MV_FOLDER` | Google 雲端硬碟 MV 資料夾網址（`songs_mv`，放 `.xkv` 檔）|
+| `GDRIVE_SCRIPT_URL` / `GDRIVE_TOKEN` | 照片、影片上傳用的 Google Apps Script 網頁應用程式網址與密碼 |
+| `REC_SECONDS` / `REC_FPS` | 錄影最長秒數、每秒張數 |
+
+- 歌曲與 MV 資料夾要設成「**知道連結的任何人都能檢視**」。
+- **MV 轉檔**：用 `tools/make_xkv.py` 把 MP4 轉成 `.xkv`（MJPEG 影像 + MP3 聲音，需安裝 ffmpeg）：
+  ```bash
+  python tools/make_xkv.py 輸入.mp4 輸出.xkv
+  ```
+- **上傳腳本**：在 https://script.google.com 新增專案，貼上 `tools/GoogleDrive_Upload.example.gs`，填入照片資料夾 ID、影片資料夾 ID 與自訂 TOKEN，先執行一次 `testAccess` 完成授權，再「部署 → 網頁應用程式」（執行身分：我；存取權：所有人），把網址填到 `GDRIVE_SCRIPT_URL`、TOKEN 填到 `GDRIVE_TOKEN`。
+
+### 5. 編譯與上傳
 
 用 Arduino IDE 開啟 `SparkBot_OpenAI/SparkBot_OpenAI.ino`，工具選單設定：
 
@@ -69,7 +87,7 @@ arduino-cli compile --fqbn "esp32:esp32:esp32s3:PSRAM=opi,FlashSize=16M,Partitio
 esptool --chip esp32s3 --port COM8 --after watchdog-reset write-flash 0x0 build/SparkBot_OpenAI.ino.merged.bin
 ```
 
-### 5. 硬體測試（選用）
+### 6. 硬體測試（選用）
 
 `config.h` 的 `HW_TEST_MODE` 改成 1 後上傳：開機會依序測試螢幕顏色、喇叭嗶聲、麥克風音量條、BOOT 鍵與拍照，確認硬體正常後再改回 0。
 
@@ -80,16 +98,18 @@ esptool --chip esp32s3 --port COM8 --after watchdog-reset write-flash 0x0 build/
 | 功能 | 怎麼用 |
 |---|---|
 | 聲控聊天 | 直接說話，停頓一下就自動送出，小柯用台灣繁體中文回答並唸出來，不用按鍵 |
-| 拍照看圖 | 說「拍照」「你看到什麼」「看得見我嗎」「這是什麼」「我手上拿什麼」，頭頂鏡頭拍照、螢幕顯示照片，AI 看完再回答 |
+| 拍照看圖 | 說「拍照」「你看到什麼」「看得見我嗎」「這是什麼」「我手上拿什麼」，頭頂鏡頭拍照、螢幕顯示照片，AI 看完再回答；照片同時上傳到雲端硬碟的照片資料夾 |
+| 攝影、錄影 | 說「攝影」或「開鏡頭」：螢幕變成鏡頭即時畫面（左上角「攝影中」）；說「錄製」開始錄影（紅點閃爍「錄製中 00:12」）；說「停止」或按 BOOT 鍵結束，自動上傳到雲端硬碟的影片資料夾（AVI，320×240 + 聲音）；說「關閉鏡頭」或按鍵回到原畫面 |
 | 上網查詢 | 問天氣、新聞、股價、比賽結果等即時資訊，AI 會自己上網搜尋（OpenAI web search）再用口語摘要 |
 | 履帶底座 | 「向前走」「後退」「左轉」「右轉」「停車」；「跳個舞」「燈光秀」「開燈」「關燈」「呼吸燈」「流水燈」「閃爍」|
-| 唱歌 | 說「唱首歌」，從吳玉柱的 YouTube 創作歌單隨機選一首，顯示封面、歌名與 QR 碼，手機掃描就能播放；「更新歌單」重新下載 |
+| 唱歌 | 說「唱首歌」，從雲端 `songs_mp3` 資料夾隨機選一首直接從喇叭唱出來（邊下載邊播），螢幕顯示封面、歌名、播放時間與 YouTube QR 碼；也可以點歌：「唱千江有水千江月」；按 BOOT 鍵停止 |
+| 播 MV | 說「播 MV」，從雲端 `songs_mv` 資料夾隨機選一支 MV 邊下載邊播；也可以點播：「播心箭如光的 MV」；按 BOOT 鍵停止 |
 | 音量 | 「大聲一點」「小聲一點」，音量會保存 |
 | 對話記憶 | 記得最近 10 則對話；「清除記憶」「重新開始」可清除 |
 | 表情 | 依 AI 回答的心情顯示開心、愛心、驚訝、難過、生氣、眨眼、害羞；聆聽、思考、說話各有動畫；太久沒互動會想睡覺 |
 | 時鐘與農曆 | 上方顯示日期、星期、農曆與時間，也可以問「今天農曆幾號」|
 | 設定網頁 | 瀏覽器開螢幕左下角的網址或 `http://sparkbot.local`，可修改 Wi-Fi、API Key、YouTube 歌單網址 |
-| BOOT 鍵 | 短按：功能說明（翻頁，最後一頁回到聊天）；按住：說話，放開送出（環境吵雜時用）；唱歌畫面時按：回到聊天 |
+| BOOT 鍵 | 短按：功能說明（翻頁，最後一頁回到聊天）；按住：說話，放開送出（環境吵雜時用）；唱歌、MV、錄影時按：停止；攝影畫面時按：回到原畫面 |
 
 ---
 
@@ -111,6 +131,11 @@ esptool --chip esp32s3 --port COM8 --after watchdog-reset write-flash 0x0 build/
     ```
 
 11. **歌曲版權**：歌單歌曲為吳玉柱詞曲創作，版權所有。
+12. **隨機播放**：唱歌與 MV 用硬體亂數隨機選，最近播過的 5 首（記在 NVS，重開機也記得）不會馬上重複。
+13. **MV 畫面較慢**：ESP32-S3 沒有硬體 JPEG 解碼，MV 畫面用軟體解碼（`MV_FAST 1` 時縮到 160 寬再放大，每張約 160ms），約每秒 5 張；聲音完整，畫面以聲音為準同步，跟不上時自動跳格。想更流暢可以另外用 `make_xkv.py` 轉 240 寬的 MV 給 SparkBot 用。
+14. **錄影長度**：S3 只有 8MB PSRAM，錄影時會暫時借用語音緩衝，最長約 60 秒（`REC_SECONDS`），記憶體滿會自動結束並上傳。上傳時間依網路速度，15 秒影片約 10 秒。
+15. **同一時間只開一條 HTTPS 連線**：照片在背景上傳時，AI 回答會稍等上傳完成（同時開兩條加密連線會記憶體不足而失敗）。
+16. **短指令**：「拍照」這類兩個字的指令約 0.3 秒，`VAD_MIN_SPEECH_MS` 預設 250ms；常被雜音誤觸時可調高。
 
 ---
 

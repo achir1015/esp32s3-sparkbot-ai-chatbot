@@ -173,7 +173,7 @@ class CjkText {
 CjkText u8f;
 
 // ---------------------------------------------------------------- UI 狀態 ----
-enum UiState { UI_IDLE, UI_LISTEN, UI_THINK, UI_SPEAK, UI_MSG, UI_HELP, UI_SONG };
+enum UiState { UI_IDLE, UI_LISTEN, UI_THINK, UI_SPEAK, UI_MSG, UI_HELP, UI_SONG, UI_VIDEO };
 volatile UiState uiState = UI_IDLE;
 String uiTitle, uiText;
 uint32_t uiSince = 0;
@@ -193,6 +193,23 @@ uint8_t qrMods[45 * 45];           // QR 碼模組（最多 version 7 = 45x45）
 volatile int qrSize = 0;
 
 bool containsAny(const String &s, std::initializer_list<const char *> words);
+
+// ---- 雲端唱歌、攝影、錄影的狀態（功能在 media.h）----
+volatile bool songPlaying = false, songLoading = false;    // 播放雲端 MP3 中／下載中
+volatile uint32_t songPosMs = 0, songDurMs = 0;
+volatile bool cameraActive = false;     // 攝影模式：待機畫面變成鏡頭即時影像，仍可聽指令
+volatile bool recActive = false;        // 錄影中
+const uint8_t *volatile recLastFrame = nullptr;   // 錄影最新一張（給螢幕預覽）
+volatile size_t recLastLen = 0;
+uint32_t recStart = 0, cameraSince = 0;
+bool drawCameraPreview();
+
+// HTTPS 連線一次只開一條（同時開兩條 TLS 會內部記憶體不足，例如照片上傳撞到 AI 請求）
+SemaphoreHandle_t netLock = nullptr;
+struct NetGuard {
+  NetGuard() { if (netLock) xSemaphoreTakeRecursive(netLock, portMAX_DELAY); }
+  ~NetGuard() { if (netLock) xSemaphoreGiveRecursive(netLock); }
+};
 
 void setUi(UiState s, const String &title = "", const String &text = "", bool sad = false) {
   xSemaphoreTake(uiLock, portMAX_DELAY);
@@ -223,6 +240,7 @@ struct {
   volatile bool playing = false;
 } tts;
 TaskHandle_t playTaskHandle;
+size_t ttsCap = TTS_BUF_BYTES;          // 錄影時會暫時把語音緩衝借走
 
 // 錄音：44 bytes WAV header + PCM（PSRAM）
 uint8_t *wavBuf = nullptr;
@@ -496,8 +514,10 @@ void buildHelp() {
     {"6. 網頁設定：開啟螢幕左下角的網址，可修改 Wi-Fi、密碼與 API Key。", C_WHITE},
     {"7. 連不上 Wi-Fi 時會開熱點 " AP_SSID "（密碼 " AP_PASS "），手機連上後開 192.168.4.1 設定。", C_WHITE},
     {"8. 上網查詢：問天氣、新聞、股價、比賽結果等即時資訊，" ROBOT_NAME "會先上網搜尋再回答。", C_WHITE},
-    {"9. 唱歌：說「唱首歌」，從" SONG_COMPOSER "的 YouTube 創作歌單隨機選一首，手機掃 QR 碼就能播放。", C_WHITE},
-    {"10. 看東西：說「你看到什麼」「這是什麼」，" ROBOT_NAME "會用頭頂鏡頭拍照再回答。", C_WHITE},
+    {"9. 唱歌：說「唱首歌」或點歌「唱千江有水千江月」，直接播放" SONG_COMPOSER "的雲端創作歌曲；按鍵停止。", C_WHITE},
+    {"9-1. 播 MV：說「播 MV」或「播千江水萬重山的 MV」，邊下載邊播；按鍵停止。", C_WHITE},
+    {"10. 看東西：說「拍照」「你看到什麼」「這是什麼」，" ROBOT_NAME "會用頭頂鏡頭拍照再回答，照片同時上傳雲端硬碟。", C_WHITE},
+    {"10-1. 攝影：說「攝影」開啟鏡頭畫面，說「錄製」開始錄影，說「停止」或按鍵結束並上傳雲端硬碟。", C_WHITE},
     {"11. 履帶底座：接上底座後可以說「向前走」「後退」「左轉」「右轉」「跳個舞」「開燈」「燈光秀」「關燈」。", C_WHITE},
     {"12. 按鍵（BOOT）：短按看本說明（看完最後一頁回到聊天）；環境吵雜時「按住說話，放開送出」。", C_WHITE},
     {"\f", 0},
@@ -600,8 +620,16 @@ void drawSong(const String &title, uint32_t now) {
     int ph = (now / 25 + i * 40) % 120;
     drawNote(SCREEN_W - 80 + i * 12 - ph / 12, 222 - ph / 5, i == 1 ? C_PINK : C_GLOW);
   }
+  char stLine[32] = "";
+  if (songLoading) snprintf(stLine, sizeof(stLine), "歌曲下載中…");
+  else if (songPlaying && songDurMs)
+    snprintf(stLine, sizeof(stLine), "%u:%02u / %u:%02u", (unsigned)(songPosMs / 60000), (unsigned)(songPosMs / 1000 % 60),
+             (unsigned)(songDurMs / 60000), (unsigned)(songDurMs / 1000 % 60));
+  else if (songPlaying) snprintf(stLine, sizeof(stLine), "%u:%02u", (unsigned)(songPosMs / 60000), (unsigned)(songPosMs / 1000 % 60));
+  u8f.setForegroundColor(C_YELLOW);
+  u8f.drawUTF8(4, 216, stLine);
   u8f.setForegroundColor(C_GREEN);
-  u8f.drawUTF8(4, 236, "按鍵：回到聊天");
+  u8f.drawUTF8(4, 236, songPlaying || songLoading ? "按鍵：停止" : "按鍵：回到聊天");
 }
 
 // ---- 農曆 ----
@@ -739,6 +767,34 @@ void uiTask(void *) {
     }
     float mouth = st == UI_SPEAK ? constrain(speakLevel / 6000.0f, 0.0f, 1.0f) : 0;
 
+    if (st == UI_VIDEO) { vTaskDelay(pdMS_TO_TICKS(30)); continue; }   // 播 MV：畫面由播放器自己畫
+    if (cameraActive && (st == UI_IDLE || st == UI_LISTEN)) {          // 攝影：鏡頭即時影像（全螢幕）
+      if (!drawCameraPreview()) {
+        cv->fillScreen(C_BG);
+        u8f.setForegroundColor(C_GRAY);
+        u8f.drawUTF8(56, 124, "等待鏡頭畫面…");
+      }
+      char lab[32];
+      uint16_t labColor = C_GREEN;                                     // 攝影中：綠色；錄製中：紅色
+      if (recActive) {
+        unsigned sec = (now - recStart) / 1000;
+        snprintf(lab, sizeof(lab), "錄製中 %02u:%02u", sec / 60, sec % 60);
+        labColor = C_RED;
+      } else snprintf(lab, sizeof(lab), st == UI_LISTEN ? "攝影中・聆聽" : "攝影中");
+      int lw = u8f.getUTF8Width(lab);
+      cv->fillRoundRect(4, 4, lw + 30, 22, 8, C_BG);
+      if (!recActive || (now / 400) % 2) cv->fillCircle(15, 15, 5, recActive ? C_RED : C_GREEN);   // 錄製中紅點閃爍
+      u8f.setForegroundColor(labColor);
+      u8f.drawUTF8(26, 21, lab);
+      const char *hint = recActive ? "說「停止」結束並上傳" : "說「錄製」開始錄影";
+      int hw = u8f.getUTF8Width(hint);
+      cv->fillRoundRect((SCREEN_W - hw) / 2 - 8, SCREEN_H - 26, hw + 16, 22, 8, C_BG);
+      u8f.setForegroundColor(C_GREEN);
+      u8f.drawUTF8((SCREEN_W - hw) / 2, SCREEN_H - 10, hint);
+      tft.drawRGBBitmap(0, 0, cv->getBuffer(), SCREEN_W, SCREEN_H);
+      vTaskDelay(pdMS_TO_TICKS(5));
+      continue;
+    }
     if (st == UI_SONG) {
       cv->fillScreen(C_BG);
       drawSong(title, now);
@@ -929,7 +985,7 @@ class TtsSink : public Stream {
  public:
   size_t write(uint8_t b) override { return write(&b, 1); }
   size_t write(const uint8_t *data, size_t len) override {
-    size_t space = TTS_BUF_BYTES - tts.written;
+    size_t space = ttsCap - tts.written;
     size_t n = min(len, space);
     memcpy(tts.buf + tts.written, data, n);
     tts.written += n;
@@ -974,6 +1030,7 @@ String speechToText(size_t samples) {
   memcpy(body + head.length(), wavBuf, wavLen);
   memcpy(body + head.length() + wavLen, tail.c_str(), tail.length());
 
+  NetGuard ng;
   WiFiClientSecure client;
   client.setInsecure();
   HTTPClient http;
@@ -996,32 +1053,6 @@ String speechToText(size_t samples) {
   String text = doc["text"] | "";
   text.trim();
   return text;
-}
-
-// 拍照：顯示在螢幕上，並回傳給 GPT 用的 data URI
-String captureImageDataUri() {
-  if (!cameraOK) return "";
-  camera_fb_t *fb = esp_camera_fb_get();       // 丟掉第一張舊畫面
-  if (fb) esp_camera_fb_return(fb);
-  fb = esp_camera_fb_get();
-  if (!fb) return "";
-
-  // 640x480 JPEG 縮一半解碼成 320x240，螢幕顯示中間 240 寬
-  if (photoPix && jpg2rgb565(fb->buf, fb->len, (uint8_t *)photoPix, JPG_SCALE_2X)) photoShow = true;
-
-  size_t b64Len = 0;
-  mbedtls_base64_encode(nullptr, 0, &b64Len, fb->buf, fb->len);
-  uint8_t *b64 = (uint8_t *)ps_malloc(b64Len + 1);
-  String uri;
-  if (b64 && mbedtls_base64_encode(b64, b64Len, &b64Len, fb->buf, fb->len) == 0) {
-    b64[b64Len] = 0;
-    uri.reserve(b64Len + 32);
-    uri = "data:image/jpeg;base64,";
-    uri += (const char *)b64;
-  }
-  free(b64);
-  esp_camera_fb_return(fb);
-  return uri;
 }
 
 String nowString() {
@@ -1151,6 +1182,7 @@ String chatWithGPT(const String &userText, const String &imageUri = "") {
   serializeJson(doc, req);
   doc.clear();
 
+  NetGuard ng;
   WiFiClientSecure client;
   client.setInsecure();
   HTTPClient http;
@@ -1206,6 +1238,7 @@ bool speak(const String &text) {
   String req;
   serializeJson(doc, req);
 
+  NetGuard ng;
   WiFiClientSecure client;
   client.setInsecure();
   HTTPClient http;
@@ -1308,6 +1341,7 @@ void loadSongsFromNvs() {
 // 下載播放清單並存進 NVS；回傳歌曲數（失敗 -1）
 int refreshPlaylist() {
   if (cfg.playlist.indexOf("list=") < 0) return -1;
+  NetGuard ng;
   WiFiClientSecure client;
   client.setInsecure();
   HTTPClient http;
@@ -1341,6 +1375,7 @@ void playlistTask(void *) {
 
 // 下載 YouTube 封面（mqdefault 320x180）並解碼
 bool fetchThumb(const String &id) {
+  NetGuard ng;
   WiFiClientSecure client;
   client.setInsecure();
   HTTPClient http;
@@ -1380,7 +1415,8 @@ void qrCapture(esp_qrcode_handle_t q) {
 uint32_t songSince = 0;
 int lastSong = -1;
 
-void singSong() {
+// 雲端沒有 MP3 時：介紹歌曲 + YouTube QR 碼（手機播放）
+void singYoutubeOnly() {
   xSemaphoreTake(songLock, portMAX_DELAY);
   int n = songs.size();
   Song s;
@@ -1418,6 +1454,8 @@ void exitSong() {
   flushMic(200);
   lastInteraction = millis();
 }
+
+#include "media.h"            // 雲端唱歌、播 MV、攝影／錄影上傳
 
 // ============================================================================
 //  履帶底座：語音指令（不需要問 AI，馬上動作）
@@ -1515,8 +1553,35 @@ void handleUtterance(size_t samples) {
   lastInteraction = millis();
 
   // 2) 本地指令
-  if (containsAny(userText, {"唱歌", "唱首歌", "唱一首", "唱個歌", "來首歌", "來一首", "放歌", "聽歌", "播歌", "放首歌"})) {
-    singSong();
+  if (containsAny(userText, {"錄製", "錄制", "開始錄", "錄一段", "錄下來", "錄個影片", "錄影片"})) {
+    String r = recordVideo();
+    speakExpr = r.startsWith("錄好了") ? EX_HAPPY : EX_SAD;
+    speakAndShow(r);
+    return;
+  }
+  if (cameraActive && containsAny(userText, {"關閉鏡頭", "關鏡頭", "關掉鏡頭", "關閉相機", "關掉相機", "離開攝影", "結束攝影",
+                                             "停止攝影", "關閉攝影", "回到原畫面"})) {
+    exitCamera();
+    speakExpr = EX_HAPPY;
+    speakAndShow("好的，關閉鏡頭了。");
+    return;
+  }
+  if (containsAny(userText, {"攝影", "開鏡頭", "打開鏡頭", "開啟鏡頭", "開箭頭", "打開箭頭", "相機", "攝像", "錄影",
+                             "即時影像", "鏡頭畫面"})) {
+    startCamera(true);
+    return;
+  }
+  String up = userText; up.replace(" ", ""); up.replace("ＭＶ", "MV"); up.replace("ｍｖ", "MV");
+  up.toUpperCase();
+  if ((up.indexOf("MV") >= 0 || containsAny(userText, {"音樂錄影帶", "歌曲影片", "看影片", "播影片", "放影片", "播放影片"})) &&
+      !containsAny(userText, {"錄製", "錄影"})) {
+    playMv(userText);
+    return;
+  }
+  if (containsAny(userText, {"唱歌", "唱首歌", "唱一首", "唱個歌", "來首歌", "來一首", "放歌", "聽歌", "播歌", "放首歌", "播首歌",
+                             "播一首", "放一首", "聽首歌", "聽一首", "放音樂", "播音樂", "聽音樂", "來點音樂"}) ||
+      (containsAny(userText, {"唱", "播", "放", "聽"}) && findRequested(mp3Songs, userText) >= 0)) {   // 點歌：「唱千江有水千江月」
+    singSong(userText);
     return;
   }
   String reply;
@@ -1830,6 +1895,7 @@ void hardwareTestLoop() {
 void setup() {
   Serial.begin(115200);
   delay(300);
+  netLock = xSemaphoreCreateRecursiveMutex();
   Serial.println("\n=== ESP-SparkBot AI 桌上型機器人「" ROBOT_NAME "」OpenAI 版 ===");
 
   pinMode(PIN_BUTTON, BUTTON_ACTIVE_LOW ? INPUT_PULLUP : INPUT_PULLDOWN);
@@ -1853,6 +1919,7 @@ void setup() {
 
   bool audioOK = initAudio();
   xTaskCreatePinnedToCore(playTask, "play", 4096, nullptr, 5, &playTaskHandle, 1);
+  camLock = xSemaphoreCreateMutex();
   cameraOK = initCamera();
   if (!cameraOK) { delay(300); esp_camera_deinit(); cameraOK = initCamera(); }   // 偶爾第一次會失敗
 #if ENABLE_CHASSIS
@@ -1932,6 +1999,14 @@ void loop() {
 #endif
   pollVolumeButton();
   if (WiFi.status() != WL_CONNECTED) connectWiFi(false);
+
+  if (cameraActive) {                                      // 攝影中：繼續聽指令；按鍵回到原畫面
+    static bool camBtnPrev = true;
+    bool b = buttonPressed();
+    if (b && !camBtnPrev) { exitCamera(); camBtnPrev = true; return; }
+    camBtnPrev = b;
+    if (millis() - max(cameraSince, (uint32_t)lastInteraction) > CAMERA_PREVIEW_MAX_SEC * 1000UL) exitCamera();
+  }
 
   if (VOICE_ACTIVATION) {                                   // 聲控模式：按鍵用來看功能說明
     static bool btnPrev = false;

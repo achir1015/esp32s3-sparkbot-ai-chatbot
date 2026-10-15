@@ -39,12 +39,25 @@
 #define SONG_COMPOSER     "吳玉柱"   // 詞曲創作者（版權所有）
 #define SONG_SHOW_SEC     180        // 唱歌畫面停留秒數（按鍵可提早回到聊天）
 
+// ------------------------------------------------- 雲端唱歌、播 MV（Google 雲端硬碟）----
+// 資料夾要設成「知道連結的任何人都能檢視」
+#define SONGS_MP3_FOLDER  "https://drive.google.com/drive/folders/1tKvT2Rg8uhTWrXZqL7NlEcpzeBYoNzPW"   // songs_mp3
+#define SONGS_MV_FOLDER   "https://drive.google.com/drive/folders/16xabmnPUX0rsQBSAtCW6bMUmvY3XlIle"   // songs_mv（.xkv）
+#define MV_FAST           1          // 1 = MV 解碼縮小一點再放大（畫面較流暢、稍模糊）；0 = 清楚但較卡
+
+// ------------------------------------------------- 拍照、錄影上傳（Google Apps Script）----
+#define GDRIVE_SCRIPT_URL ""
+#define GDRIVE_TOKEN      "CHANGE_ME_TOKEN"   // 必須和 .gs 裡的 TOKEN 相同
+#define REC_SECONDS     60         // 錄影最長秒數；說「停止」或按鍵就結束並上傳（記憶體滿時會自動結束）
+#define REC_FPS         8          // 錄影每秒張數（320x240 MJPEG + 8kHz μ-law 聲音，存成 AVI）
+#define CAMERA_PREVIEW_MAX_SEC 180 // 攝影畫面多久沒互動自動回到原畫面
+
 // ------------------------------------------------------------ 聲控（免按鍵）----
 #define VOICE_ACTIVATION  1        // 1 = 直接說話就會開始聆聽；0 = 只用按鍵（按住 BOOT 說話）
 #define VAD_MIN_RMS       250      // 觸發錄音的最低音量（環境吵、常誤觸就調高；喊很大聲才有反應就調低）
 #define VAD_RATIO         3.0      // 音量需高於背景噪音幾倍才觸發
 #define VAD_SILENCE_MS    900      // 停頓多久視為說完
-#define VAD_MIN_SPEECH_MS 400      // 少於這個長度的聲音視為雜音
+#define VAD_MIN_SPEECH_MS 250      // 少於這個長度的聲音視為雜音（「拍照」這類兩個字的短指令約 0.3 秒）
 #define SLEEPY_AFTER_SEC  90       // 多久沒互動表情變想睡
 
 // ------------------------------------------------------------------ 音訊 ----

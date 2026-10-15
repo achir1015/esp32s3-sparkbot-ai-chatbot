@@ -12,3 +12,4 @@ backup/
 *.mp4
 ~$*
 ~WRL*.tmp
+build.log
